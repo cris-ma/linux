@@ -1115,6 +1115,12 @@ static int iter_shmti_process_response(const struct scmi_protocol_handle *ph,
 		return -EINVAL;
 	}
 
+	/* SHMTI base phys_addr SHOULD be 64bit aligned by the SCMI spec */
+	if (!IS_ALIGNED(phys_addr, 8))
+		dev_warn(ph->dev,
+			 "SHMTI ID %u discovered at NON 64bit-aligned phys_addr:0x%llX\n",
+			 shmti->info.sid, phys_addr);
+
 	addr = devm_ioremap(ph->dev, phys_addr, len);
 	if (!addr)
 		return -EADDRNOTAVAIL;
