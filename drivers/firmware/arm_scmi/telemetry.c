@@ -539,6 +539,7 @@ err:
 struct scmi_tlm_de_priv {
 	struct telemetry_info *ti;
 	void *next;
+	size_t rx_len;
 };
 
 static int
@@ -598,22 +599,23 @@ static int iter_de_descr_update_state(struct scmi_iterator_state *st,
 	if (st->rx_len < (sizeof(*r) + sizeof(r->desc[0]) * st->num_returned))
 		return -EINVAL;
 
-	/* Initialized to first descriptor */
+	/* Initialized to first descriptor and initial payload size */
 	p->next = (void *)r->desc;
+	p->rx_len = st->rx_len;
 
 	return 0;
 }
 
 static int scmi_telemetry_de_descriptor_parse(struct telemetry_info *ti,
 					      struct telemetry_de *tde,
-					      void **next, size_t rx_len)
+					      void **next, size_t *rx_len)
 {
 	struct scmi_telemetry_res_info *rinfo = ti->rinfo;
 	const struct scmi_de_desc *desc = *next;
 	unsigned int grp_id;
 	size_t payld_sz = sizeof(*desc);
 
-	if (rx_len < payld_sz)
+	if (*rx_len < payld_sz)
 		return -ENOSPC;
 
 	tde->de.info->id = le32_to_cpu(desc->id);
@@ -646,7 +648,7 @@ static int scmi_telemetry_de_descriptor_parse(struct telemetry_info *ti,
 	*next += sizeof(*desc);
 
 	payld_sz += SCMI_TDE_VAR_SZ(tde);
-	if (rx_len < payld_sz)
+	if (*rx_len < payld_sz)
 		return -ENOSPC;
 
 	if (tde->ts_type == TSTAMP_LINE) {
@@ -692,6 +694,8 @@ static int scmi_telemetry_de_descriptor_parse(struct telemetry_info *ti,
 		*next += SCMI_SHORT_NAME_MAX_SIZE;
 	}
 
+	*rx_len -= payld_sz;
+
 	return 0;
 }
 
@@ -726,7 +730,7 @@ static int iter_de_descr_process_response(const struct scmi_protocol_handle *ph,
 		return -EINVAL;
 	}
 
-	ret = scmi_telemetry_de_descriptor_parse(ti, tde, &p->next, st->rx_len);
+	ret = scmi_telemetry_de_descriptor_parse(ti, tde, &p->next, &p->rx_len);
 	if (ret) {
 		dev_err(ph->dev, "Malformed DE Descriptor - ret:%d\n", ret);
 		goto err;
