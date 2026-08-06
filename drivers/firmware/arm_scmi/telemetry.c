@@ -640,8 +640,6 @@ static int scmi_telemetry_de_descriptor_parse(struct telemetry_info *ti,
 	tde->de.info->persistent = IS_PERSISTENT(desc);
 	tde->ts_type = TSTAMP_SUPPORT(desc);
 	tde->de.tstamp_support = !!tde->ts_type;
-	/* Count timestamped DEs */
-	ti->num_des_tstamp += !!tde->de.tstamp_support;
 	tde->de.fc_support = IS_FC_SUPPORTED(desc);
 	tde->de.name_support = IS_NAME_SUPPORTED(desc);
 	/* Update DE_DESCRIPTOR size for the next iteration */
@@ -693,6 +691,9 @@ static int scmi_telemetry_de_descriptor_parse(struct telemetry_info *ti,
 		/* Variably sized depending on name support */
 		*next += SCMI_SHORT_NAME_MAX_SIZE;
 	}
+
+	/* Count timestamped DEs */
+	ti->num_des_tstamp += !!tde->de.tstamp_support;
 
 	*rx_len -= payld_sz;
 
