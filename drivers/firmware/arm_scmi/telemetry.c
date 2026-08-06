@@ -768,6 +768,7 @@ static int
 scmi_telemetry_de_groups_init(struct device *dev, struct telemetry_info *ti)
 {
 	struct scmi_telemetry_res_info *rinfo = ti->rinfo;
+	unsigned int num_groups = 0;
 
 	/* Allocate all groups DEs IDs arrays at first ... */
 	for (int i = 0; i < ti->info.base.num_groups; i++) {
@@ -778,7 +779,7 @@ scmi_telemetry_de_groups_init(struct device *dev, struct telemetry_info *ti)
 							  sizeof(unsigned int),
 							  GFP_KERNEL);
 		if (!des)
-			return -ENOMEM;
+			break;
 
 		/*
 		 * Max size 32bit ID string in Hex: 0xCAFECAFE
@@ -788,12 +789,24 @@ scmi_telemetry_de_groups_init(struct device *dev, struct telemetry_info *ti)
 		des_str_sz = grp->info->num_des * 11 + 1;
 		char *des_str __free(kfree) = kzalloc(des_str_sz, GFP_KERNEL);
 		if (!des_str)
-			return -ENOMEM;
+			break;
 
 		grp->des = no_free_ptr(des);
 		grp->des_str = no_free_ptr(des_str);
 		/* Reset group DE counter */
 		grp->info->num_des = 0;
+
+		num_groups++;
+	}
+
+	/* Unroll on failure... */
+	if (num_groups < ti->info.base.num_groups) {
+		for (int i = 0; i < num_groups; i++) {
+			kfree(rinfo->grps[i].des);
+			kfree(rinfo->grps[i].des_str);
+		}
+
+		return -ENOMEM;
 	}
 
 	/* Scan DEs and populate DE IDs arrays for all groups */
@@ -828,7 +841,8 @@ scmi_telemetry_de_groups_init(struct device *dev, struct telemetry_info *ti)
 		}
 	}
 
-	rinfo->num_groups = ti->info.base.num_groups;
+	/* Expose all groups once all fully initialized */
+	rinfo->num_groups = num_groups;
 
 	return 0;
 }
