@@ -416,8 +416,6 @@ struct telemetry_de {
 	u32 offset;
 	/* NOTE THAT DE data_sz is registered in scmi_telemetry_de */
 	u32 fc_size;
-	/* Protect last_val/ts/magic accesses  */
-	struct mutex mtx;
 	u64 last_val;
 	u64 last_ts;
 	u32 last_magic;
@@ -425,6 +423,8 @@ struct telemetry_de {
 	struct telemetry_block_ts *bts;
 	struct telemetry_uuid *uuid;
 	struct scmi_telemetry_de de;
+	/* Protect last_val/ts/magic accesses - MUST BE KEPT LAST */
+	struct mutex mtx;
 };
 
 #define to_tde(d)	container_of(d, struct telemetry_de, de)
@@ -474,8 +474,14 @@ scmi_telemetry_free_tde_get(struct telemetry_info *ti)
 static void scmi_telemetry_free_tde_put(struct telemetry_info *ti,
 					struct telemetry_de *tde)
 {
-	guard(mutex)(&ti->free_mtx);
+	struct scmi_telemetry_de_info *info;
 
+	guard(mutex)(&ti->free_mtx);
+	/* Save clear and restore */
+	info = READ_ONCE(tde->de.info);
+	memset(info, 0, sizeof(*info));
+	memset(tde, 0, offsetof(struct telemetry_de, mtx));
+	tde->de.info = info;
 	list_add_tail(&tde->item, &ti->free_des);
 }
 
@@ -1261,7 +1267,7 @@ static int scmi_telemetry_resources_alloc(struct telemetry_info *ti)
 		mutex_init(&tdes[i].mtx);
 		/* Bind contiguous DE info structures */
 		tdes[i].de.info = &dei_store[i];
-		list_add_tail(&tdes[i].item, &ti->free_des);
+		scmi_telemetry_free_tde_put(ti, &tdes[i]);
 	}
 
 	for (int i = 0; i < ti->info.base.num_groups; i++) {
