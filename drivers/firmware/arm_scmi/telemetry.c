@@ -1285,7 +1285,8 @@ static int scmi_telemetry_resources_alloc(struct telemetry_info *ti)
 	rinfo->grps = no_free_ptr(grps);
 	rinfo->grps_store = no_free_ptr(grps_store);
 
-	ti->rinfo = no_free_ptr(rinfo);
+	/* Ensure all of the above assignments are visible */
+	smp_store_release(&ti->rinfo, no_free_ptr(rinfo));
 
 	return 0;
 }
@@ -1306,6 +1307,9 @@ static void scmi_telemetry_resources_free(void *arg)
 	struct telemetry_info *ti = arg;
 	struct scmi_telemetry_res_info *rinfo = ti->rinfo;
 
+	/* Ensure rinfo is no more accessible upfront */
+	smp_store_release(&ti->rinfo, NULL);
+
 	xa_destroy(&ti->xa_des);
 	kfree(ti->tdes);
 	kfree(rinfo->des);
@@ -1315,14 +1319,12 @@ static void scmi_telemetry_resources_free(void *arg)
 	kfree(rinfo->grps_store);
 
 	kfree(rinfo);
-
-	ti->rinfo = NULL;
 }
 
 static struct scmi_telemetry_res_info *
 __scmi_telemetry_resources_get(struct telemetry_info *ti)
 {
-	return ti->rinfo;
+	return smp_load_acquire(&ti->rinfo);
 }
 
 /**
@@ -1348,9 +1350,12 @@ __scmi_telemetry_resources_get(struct telemetry_info *ti)
 static struct scmi_telemetry_res_info *
 scmi_telemetry_resources_enumerate(struct telemetry_info *ti)
 {
-	struct scmi_telemetry_res_info *rinfo = ti->rinfo;
+	struct scmi_telemetry_res_info *rinfo;
 	struct device *dev = ti->ph->dev;
 	int ret;
+
+	/* Ensure local rinfo is initialized */
+	rinfo = smp_load_acquire(&ti->rinfo);
 
 	/*
 	 * Ensure this init function can be called only once and
@@ -1374,8 +1379,8 @@ scmi_telemetry_resources_enumerate(struct telemetry_info *ti)
 		goto done;
 	}
 
-	/* If we got here, the enumeration was fully successful */
-	rinfo->fully_enumerated = true;
+	/* Enumeration was fully successful, ensure this is visbile */
+	smp_store_release(&rinfo->fully_enumerated, true);
 done:
 	/* Disable initialization permanently */
 	smp_store_mb(ti->res_get, __scmi_telemetry_resources_get);
