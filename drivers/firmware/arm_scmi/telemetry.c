@@ -2022,6 +2022,8 @@ static void scmi_telemetry_resources_free(void *arg)
 {
 	struct telemetry_info *ti = arg;
 	struct scmi_telemetry_res_info *rinfo = ti->rinfo;
+	struct telemetry_line *line;
+	unsigned long idx;
 
 	/* Ensure rinfo is no more accessible upfront */
 	smp_store_release(&ti->rinfo, NULL);
@@ -2037,16 +2039,35 @@ static void scmi_telemetry_resources_free(void *arg)
 		scmi_telemetry_free_tde_put(ti, tde);
 	}
 	xa_destroy(&ti->xa_des);
-	xa_destroy(&ti->xa_lines);
 
-	/* Drop reference to UUID line kept in the growable array */
+	/* Drop reference to UUID lines kept in the growable array */
 	for (int i = 0; i < ti->info.num_uuids; i++) {
 		struct telemetry_uuid *uuid = to_uuid_from_uuid_t(ti->info.uuids[i]);
 
 		scmi_telemetry_line_put(&uuid->line, NULL);
 	}
-
 	kfree(ti->info.uuids);
+
+	/* Drop all remaining currently unbound lines and their containers */
+	xa_for_each(&ti->xa_lines, idx, line) {
+		void *blob;
+
+		switch (line->type) {
+		case TDCF_BLK_TS_LINE:
+			blob = to_blkts(line);
+			break;
+		case TDCF_UUID_LINE:
+			blob = to_uuid_from_line(line);
+			break;
+		default:
+			blob = NULL;
+			break;
+		}
+
+		scmi_telemetry_line_put(line, blob);
+	}
+	xa_destroy(&ti->xa_lines);
+
 	kfree(ti->tdes);
 	kfree(rinfo->des);
 	kfree(rinfo->dei_store);
