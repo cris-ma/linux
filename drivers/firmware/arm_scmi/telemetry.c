@@ -505,7 +505,7 @@ static struct telemetry_de *scmi_telemetry_tde_get(struct telemetry_info *ti,
 	/* Pick a new tde */
 	tde = scmi_telemetry_free_tde_get(ti);
 	if (!tde) {
-		dev_err(ti->ph->dev, "Cannot allocate DE for ID:0x%08X\n", de_id);
+		dev_err(ti->ph->dev, "Cannot get TDE for ID:0x%08X\n", de_id);
 		return ERR_PTR(-ENOSPC);
 	}
 
@@ -536,7 +536,7 @@ static int scmi_telemetry_tde_register(struct telemetry_info *ti,
 	return 0;
 
 err:
-	dev_err(ti->ph->dev, "Cannot register DE for ID:0x%08X\n",
+	dev_err(ti->ph->dev, "Cannot register TDE for ID:0x%08X\n",
 		tde->de.info->id);
 
 	return ret;
