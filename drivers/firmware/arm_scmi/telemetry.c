@@ -1386,7 +1386,8 @@ static void scmi_telemetry_uuid_unlink(struct telemetry_de *tde)
 		return;
 
 	scmi_telemetry_line_put(&tde->uuid->line, tde->uuid);
-	tde->uuid = NULL;
+	/* Ensure UUID is visible once nullified */
+	smp_store_release(&tde->uuid, NULL);
 	trace_scmi_tlm_access(tde->de.info->id, "UUID_UNLINK", 0, 0);
 }
 
@@ -1723,7 +1724,8 @@ static inline void scmi_telemetry_uuid_link(struct telemetry_de *tde,
 		return;
 
 	refcount_inc(&uuid->line.users);
-	tde->uuid = uuid;
+	/* Ensure UUDI association is visible */
+	smp_store_release(&tde->uuid, uuid);
 
 	trace_scmi_tlm_access(tde->de.info->id, "UUID_LINK", 0, 0);
 }
@@ -2055,8 +2057,13 @@ scmi_telemetry_state_set_resp_process(struct telemetry_info *ti, void *obj,
 			 * SHMTI lines, install the primary UUID for this DE.
 			 */
 			if (!tde->uuid) {
-				tde->uuid = scmi_telemetry_uuid_bind(ti, shmti, payld);
-				if (!tde->uuid)
+				struct telemetry_uuid *uuid;
+
+				uuid = scmi_telemetry_uuid_bind(ti, shmti, payld);
+				if (uuid)
+					/*Ensure UUID association is visible*/
+					smp_store_release(&tde->uuid, uuid);
+				else
 					scmi_telemetry_uuid_link(tde, ti->primary_uuid);
 			}
 
