@@ -30,7 +30,7 @@
  * @size: sizeof this structure - IN
  * @abi_version: ABI Version - OUT
  * @abi_features: ABI capabilities bitmap - OUT
- * @de_impl_version: SCMI Telemetry DE implementation revision - OUT
+ * @primary_de_impl_version: SCMI Telemetry DE implementation revision - OUT
  * @num_des: Number of defined DEs - OUT
  * @num_groups: Number of defined DEs groups - OUT
  * @num_intervals: Number of available update intervals (instance-level) - OUT
@@ -152,7 +152,7 @@ struct scmi_tlm_intervals {
  *
  * This descriptor is used directly by the aggregate SCMI_TLM_GET_ALL_CFG and
  * SCMI_TLM_SET_ALL_CFG IOCTLs, or embedded into an @scmi_tlm_batch request for
- * SCMI_TLM_GET_DE_CFG and SCMI_TLM_GET_DE_CFG IOCTLs.
+ * SCMI_TLM_GET_DE_CFG and SCMI_TLM_SET_DE_CFG IOCTLs.
  *
  * @id: Identifier of the DE, ignored by SCMI_TLM_GET/SET_ALL_CFG - IN
  * @enable: Get/Set the enabled state of this single DE or the cumulative ALL
@@ -161,11 +161,11 @@ struct scmi_tlm_intervals {
  *	      the cumulative ALL state - IN/OUT
  * @sid: An integer representing the SHMTI ID that contains this DE. Valid
  *	 ONLY when the related DE is enabled - OUT
- * @oofset: An integer representing the offset in the SHMTI @sid that identifies
+ * @offset: An integer representing the offset in the SHMTI @sid that identifies
  *	    the start of the TDCF DataLine containing this DE.
  *	    Valid ONLY when the related DE is enabled - OUT
  * @pad: Padding fields to enforce alignment
- * @uuid: An arrray containing the UUID, in BigEndian format, associated to
+ * @uuid: An array containing the UUID, in BigEndian format, associated to
  *	  this DE. Valid ONLY when the related DE is enabled: this UUID can
  *	  be the primary UUID or one of the secondary UUIDs if any exist.
  *	  Note that this UUID/DE association is permanent within the same
@@ -309,7 +309,7 @@ struct scmi_tlm_data_read {
  * struct scmi_tlm_batch  - A wrapper structure for BATCH operations
  *
  * @num_items: Number of items in @items and @states - IN
- * @items_sz: Size of a single item contained in @items - IN
+ * @item_sz: Size of a single item contained in @items - IN
  * @reserved: Some room for future expansion. Must be zero.
  * @states: A reference to an arrays of u32 items representing the outcome of
  *	    the requests for each single item in @items: these are ordered in
@@ -432,7 +432,7 @@ struct scmi_tlm_shmtis_list {
 /**
  * struct scmi_tlm_uuid  - UUID descriptor
  *
- * @byte: An array of bytes containing the UUDI in BigEndian order as
+ * @bytes: An array of bytes containing the UUID in BigEndian order as
  *	  per RFC 9562. - OUT
  */
 struct scmi_tlm_uuid {
@@ -507,7 +507,7 @@ struct scmi_tlm_event {
 #define SCMI_TLM_GET_GRP_DESC	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x0D, struct scmi_tlm_grp_desc)
 #define SCMI_TLM_SINGLE_READ	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x0E, struct scmi_tlm_data_read)
 #define SCMI_TLM_BULK_READ	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x0F, struct scmi_tlm_data_read)
-#define SCMI_TLM_BATCH_READ	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x10, struct scmi_tlm_data_read)
+#define SCMI_TLM_BATCH_READ	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x10, struct scmi_tlm_batch)
 #define SCMI_TLM_GET_SHMTI_LIST	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x11, struct scmi_tlm_shmtis_list)
 #define SCMI_TLM_RESET		_IO(SCMI_TLM_IOCTL_MAGIC,   0x12)
 #define SCMI_TLM_GET_UUID_LIST	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x13, struct scmi_tlm_uuid_list)
