@@ -2356,10 +2356,10 @@ scmi_telemetry_collection_configure(const struct scmi_protocol_handle *ph,
 				    const unsigned int *update_interval_ms,
 				    const enum scmi_telemetry_collection *mode)
 {
-	bool tlm_enable, is_group = res_id != SCMI_TLM_GRP_INVALID;
 	enum scmi_telemetry_collection *current_mode, next_mode;
 	struct telemetry_info *ti = ph->get_priv(ph);
 	struct scmi_msg_telemetry_config_set *msg;
+	bool tlm_enable, *current_state, is_group;
 	unsigned int *active_update_interval;
 	struct scmi_xfer *t;
 	__le32 interval;
@@ -2370,12 +2370,14 @@ scmi_telemetry_collection_configure(const struct scmi_protocol_handle *ph,
 	    !ti->info.continuos_update_support)
 		return -EINVAL;
 
+	is_group = res_id != SCMI_TLM_GRP_INVALID;
 	if (is_group && res_id >= ti->info.base.num_groups)
 		return -EINVAL;
 
 	if (!is_group) {
 		active_update_interval = &ti->info.active_update_interval;
 		current_mode = &ti->info.current_mode;
+		current_state = &ti->info.enabled;
 	} else {
 		struct scmi_telemetry_res_info *rinfo;
 
@@ -2383,6 +2385,7 @@ scmi_telemetry_collection_configure(const struct scmi_protocol_handle *ph,
 		active_update_interval =
 			&rinfo->grps[res_id].active_update_interval;
 		current_mode = &rinfo->grps[res_id].current_mode;
+		current_state = &rinfo->grps[res_id].enabled;
 	}
 
 	if (!enable && !update_interval_ms && (!mode || *mode == *current_mode))
@@ -2398,7 +2401,7 @@ scmi_telemetry_collection_configure(const struct scmi_protocol_handle *ph,
 	else
 		interval = cpu_to_le32(*update_interval_ms);
 
-	tlm_enable = enable ? *enable : ti->info.enabled;
+	tlm_enable = enable ? *enable : *current_state;
 	next_mode = mode ? *mode : *current_mode;
 
 	msg = t->tx.buf;
@@ -2410,7 +2413,7 @@ scmi_telemetry_collection_configure(const struct scmi_protocol_handle *ph,
 	msg->sampling_rate = interval;
 	ret = ph->xops->do_xfer(ph, t);
 	if (!ret) {
-		ti->info.enabled = tlm_enable;
+		*current_state = tlm_enable;
 		*current_mode = next_mode;
 		ti->info.notif_enabled = *current_mode == SCMI_TLM_NOTIFICATION;
 		if (update_interval_ms)
