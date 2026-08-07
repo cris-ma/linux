@@ -411,15 +411,18 @@ struct telemetry_shmti {
 		(_eplg);					\
 	})
 
-#define SHMTI_OVERFLOWS(_n, _s)						\
-	({								\
-		struct telemetry_shmti *__s = (_s);			\
-		void __iomem *__n = (_n);				\
-		bool oflow;						\
-									\
-		__n += LINE_LENGTH_BYTES((struct payload __iomem *)__n);\
-		oflow = __n >= __s->base + __s->info.len;		\
-		oflow;							\
+#define SHMTI_OVERFLOWS(_n, _s)							\
+	({									\
+		struct telemetry_shmti *__s = (_s);				\
+		void __iomem *__limit = __s->base + __s->info.len;		\
+		void __iomem *__n = (_n);					\
+		bool oflow = true;						\
+										\
+		if (__n < __limit) {						\
+			__n += LINE_LENGTH_BYTES((struct payload __iomem *)__n);\
+			oflow = __n >= __limit;					\
+		}								\
+		oflow;								\
 	})
 
 struct telemetry_line {
