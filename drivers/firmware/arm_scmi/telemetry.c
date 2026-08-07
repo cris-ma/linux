@@ -449,7 +449,8 @@ struct telemetry_uuid {
 	struct telemetry_line line;
 };
 
-#define to_uuid(l)	container_of(l, struct telemetry_uuid, line)
+#define to_uuid_from_line(l)	container_of(l, struct telemetry_uuid, line)
+#define to_uuid_from_uuid_t(u)	container_of(u, struct telemetry_uuid, uuid)
 
 enum timestamps {
 	TSTAMP_NONE,
@@ -1485,6 +1486,9 @@ static int scmi_telemetry_uuids_update(struct telemetry_info *ti,
 		kfree(old_uuids);
 	}
 
+	/* Bump refcount on this line ... cannot fail by construction */
+	scmi_telemetry_line_get(&ti->xa_lines, uuid->line.payld);
+
 	ti->info.uuids[ti->info.num_uuids] = &uuid->uuid;
 	ti->info.num_uuids++;
 
@@ -1548,7 +1552,7 @@ scmi_telemetry_uuid_get_or_create(struct telemetry_info *ti,
 	guard(mutex)(&ti->lines_mtx);
 	line = scmi_telemetry_line_get(&ti->xa_lines, payld);
 	if (line)
-		return to_uuid(line);
+		return to_uuid_from_line(line);
 
 	return scmi_telemetry_uuid_create(ti, payld);
 }
@@ -2034,6 +2038,14 @@ static void scmi_telemetry_resources_free(void *arg)
 	}
 	xa_destroy(&ti->xa_des);
 	xa_destroy(&ti->xa_lines);
+
+	/* Drop reference to UUID line kept in the growable array */
+	for (int i = 0; i < ti->info.num_uuids; i++) {
+		struct telemetry_uuid *uuid = to_uuid_from_uuid_t(ti->info.uuids[i]);
+
+		scmi_telemetry_line_put(&uuid->line, NULL);
+	}
+
 	kfree(ti->info.uuids);
 	kfree(ti->tdes);
 	kfree(rinfo->des);
