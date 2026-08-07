@@ -2312,44 +2312,6 @@ static int scmi_telemetry_state_set(const struct scmi_protocol_handle *ph,
 	return 0;
 }
 
-static int scmi_telemetry_all_disable(const struct scmi_protocol_handle *ph,
-				      bool is_group)
-{
-	struct telemetry_info *ti = ph->get_priv(ph);
-	struct scmi_msg_telemetry_de_configure *msg;
-	struct scmi_telemetry_res_info *rinfo;
-	struct scmi_xfer *t;
-	int ret;
-
-	rinfo = ti->res_get(ti);
-	ret = ph->xops->xfer_get_init(ph, TELEMETRY_DE_CONFIGURE,
-				      sizeof(*msg), 0, &t);
-	if (ret)
-		return ret;
-
-	msg = t->tx.buf;
-	msg->flags = cpu_to_le32(DE_DISABLE_ALL);
-	if (is_group)
-		msg->flags |= cpu_to_le32(GROUP_SELECTOR);
-	ret = ph->xops->do_xfer(ph, t);
-	if (!ret) {
-		for (int i = 0; i < rinfo->num_des; i++)
-			scmi_telemetry_de_state_update(ti, ENA_STATE,
-						       &rinfo->des[i]->enabled,
-						       false);
-		if (is_group) {
-			for (int i = 0; i < ti->info.base.num_groups; i++) {
-				rinfo->grps[i].enabled = false;
-				scmi_telemetry_group_unlink(ti, &rinfo->grps[i]);
-			}
-		}
-	}
-
-	ph->xops->xfer_put(ph, t);
-
-	return ret;
-}
-
 static int
 scmi_telemetry_collection_configure(const struct scmi_protocol_handle *ph,
 				    unsigned int res_id, const bool *enable,
@@ -2431,7 +2393,6 @@ static const struct scmi_telemetry_proto_ops tlm_proto_ops = {
 	.res_get = scmi_telemetry_resources_get,
 	.state_get = scmi_telemetry_state_get,
 	.state_set = scmi_telemetry_state_set,
-	.all_disable = scmi_telemetry_all_disable,
 	.collection_configure = scmi_telemetry_collection_configure,
 };
 

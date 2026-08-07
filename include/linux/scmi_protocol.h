@@ -997,7 +997,6 @@ struct scmi_telemetry_info {
  * @state_get: retrieve the specific DE or GROUP state, if NULL returns the
  *	       cumulative state of all DEs.
  * @state_set: enable/disable the specific DE or GROUP with or without timestamps.
- * @all_disable: disable ALL DEs or GROUPs.
  * @collection_configure: choose a sampling rate and enable SHMTI/FC sampling
  *			  for on demand collection via @de_data_read or async
  *			  notificatioins for all the enabled DEs.
@@ -1016,7 +1015,6 @@ struct scmi_telemetry_proto_ops {
 			 bool is_group, u32 id, const bool *enable,
 			 const bool *tstamp, u32 *sid, u32 *offset,
 			 uuid_t *uuid);
-	int (*all_disable)(const struct scmi_protocol_handle *ph, bool group);
 	int (*collection_configure)(const struct scmi_protocol_handle *ph,
 				    unsigned int res_id, const bool *enable,
 				    const unsigned int *update_interval_ms,
