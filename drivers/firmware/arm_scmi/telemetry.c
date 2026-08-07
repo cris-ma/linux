@@ -2031,14 +2031,15 @@ scmi_telemetry_state_set_resp_process(struct telemetry_info *ti, void *obj,
 			struct payload __iomem *payld;
 			struct scmi_telemetry_de *de = obj;
 			struct telemetry_shmti *shmti;
-			u32 de_offs;
+			u32 de_offs, de_end;
 
 			de_offs = le32_to_cpu(resp->shmti_de_offset);
 
 			shmti = &ti->shmti[sid];
 			payld = shmti->base;
-			/* Check boundary first... */
-			if (de_offs + LINE_LENGTH_BYTES(payld) >= shmti->info.len)
+			de_end = de_offs + LINE_LENGTH_BYTES(payld);
+			/* Check wraparounds and boundary first... */
+			if (de_end <= de_offs || de_end >= shmti->info.len)
 				return -EPROTO;
 
 			tde = to_tde(de);
