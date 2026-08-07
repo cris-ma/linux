@@ -1569,42 +1569,6 @@ static void scmi_telemetry_tdcf_uuid_parse(struct telemetry_info *ti,
 	*active_uuid = uuid;
 }
 
-static struct payload __iomem *
-scmi_telemetry_nearest_line_by_type(struct telemetry_shmti *shmti,
-				    void __iomem *last, enum tdcf_line_types ltype)
-{
-	struct tdcf __iomem *tdcf = shmti->base;
-	void __iomem *next, *found = NULL;
-
-	/* Scan from start of TDCF payloads up to last_payld */
-	next = tdcf->payld;
-	while (next < last) {
-		if (LINE_TYPE((struct payload __iomem *)next) == ltype)
-			found = next;
-
-		next += LINE_LENGTH_BYTES((struct payload __iomem *)next);
-	}
-
-	return found;
-}
-
-static struct telemetry_block_ts *
-scmi_telemetry_blkts_bind(struct telemetry_info *ti, struct telemetry_shmti *shmti,
-			  struct payload __iomem *payld,
-			  struct payload __iomem *bts_payld)
-{
-	/* Trigger a manual search when no BLK_TS payload offset was provided */
-	if (!bts_payld) {
-		/* Find the BLK_TS immediately preceding this DE payld */
-		bts_payld = scmi_telemetry_nearest_line_by_type(shmti, payld,
-								TDCF_BLK_TS_LINE);
-		if (!bts_payld)
-			return NULL;
-	}
-
-	return scmi_telemetry_blkts_get_or_create(ti, bts_payld);
-}
-
 /**
  * scmi_telemetry_tdcf_blkts_parse  - A BLK_TS line parser
  *
@@ -1718,19 +1682,6 @@ static inline void scmi_telemetry_uuid_link(struct telemetry_de *tde,
 	tde->uuid = uuid;
 
 	trace_scmi_tlm_access(tde->de.info->id, "UUID_LINK", 0, 0);
-}
-
-static struct telemetry_uuid *
-scmi_telemetry_uuid_bind(struct telemetry_info *ti, struct telemetry_shmti *shmti,
-			 struct payload __iomem *payld)
-{
-	struct payload __iomem *uuid;
-
-	uuid = scmi_telemetry_nearest_line_by_type(shmti, payld, TDCF_UUID_LINE);
-	if (!uuid)
-		return NULL;
-
-	return scmi_telemetry_uuid_get_or_create(ti, uuid);
 }
 
 /**
