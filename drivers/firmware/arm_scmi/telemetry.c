@@ -14,6 +14,7 @@
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/limits.h>
+#include <linux/minmax.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/refcount.h>
@@ -1476,7 +1477,7 @@ static int scmi_telemetry_uuids_update(struct telemetry_info *ti,
 
 		/* Copy/move old allocated UUIDs */
 		for (int i = 0; i < ti->info.num_uuids; i++)
-			uuid_copy(uuids[i], ti->info.uuids[i]);
+			uuids[i] = ti->info.uuids[i];
 
 		old_uuids = ti->info.uuids;
 		ti->info.uuids = uuids;
@@ -2155,7 +2156,12 @@ static int scmi_telemetry_instance_init(struct telemetry_info *ti)
 	xa_init(&ti->xa_lines);
 	mutex_init(&ti->lines_mtx);
 
-	ti->uuids_len = ti->num_shmti * 2;
+	/*
+	 * Always allocate at least one slot for the primary and anyway at
+	 * least enough to avoid immediate resizing, assuring uuids_len
+	 * always greater or equal to one.
+	 */
+	ti->uuids_len = max(ti->num_shmti * 2, SCMI_UUID_DB_THRESH + 1);
 	ti->info.uuids = kcalloc(ti->uuids_len, sizeof(*ti->info.uuids),
 				 GFP_KERNEL);
 	if (!ti->info.uuids) {
