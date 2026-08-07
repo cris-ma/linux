@@ -1316,6 +1316,11 @@ static void scmi_telemetry_resources_free(void *arg)
 	/* Ensure rinfo is no more accessible upfront */
 	smp_store_release(&ti->rinfo, NULL);
 
+	for (int i = 0; i < rinfo->num_des; i++) {
+		struct telemetry_de *tde = to_tde(rinfo->des[i]);
+
+		scmi_telemetry_free_tde_put(ti, tde);
+	}
 	xa_destroy(&ti->xa_des);
 	kfree(ti->tdes);
 	kfree(rinfo->des);
