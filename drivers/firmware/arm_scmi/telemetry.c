@@ -1826,6 +1826,7 @@ static void scmi_telemetry_tdcf_data_parse(struct telemetry_info *ti,
 
 	/* Update DE location refs if requested: normally done only on enable */
 	if (mode >= SCAN_UPDATE) {
+		tde->sid = shmti->info.sid;
 		tde->base = shmti->base;
 		tde->eplg = SHMTI_EPLG(shmti);
 		tde->offset = (void __iomem *)payld - (void __iomem *)shmti->base;
