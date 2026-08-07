@@ -1807,8 +1807,11 @@ static void scmi_telemetry_tdcf_data_parse(struct telemetry_info *ti,
 
 		/* In SCAN_DISCOVERY mode we allocate new DEs for unknown IDs */
 		tde = scmi_telemetry_tde_allocate(ti, de_id, payld);
-		if (!tde)
+		if (!tde) {
+			dev_err(ti->ph->dev,
+				"Cannot allocate TDE for ID:0x%08X\n", de_id);
 			return;
+		}
 	}
 
 	/* Update DE location refs if requested: normally done only on enable */
