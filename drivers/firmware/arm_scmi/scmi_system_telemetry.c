@@ -1420,7 +1420,12 @@ static void scmi_telemetry_remove(struct scmi_device *sdev)
 	if (!ti)
 		return;
 
-	/* PUT still unregistered CTX */
+	/*
+	 * Any STILL subscribed event is cleaned-up here on remove NOT on
+	 * frop.release so that a process could subscribe for an event providing
+	 * its eventfd and then close the tlm_<N> and just monitoring the
+	 * events.
+	 * */
 	xa_for_each(&ti->events_xa, cookie, ctx) {
 		xa_erase(&ti->events_xa, cookie);
 		ti->tsp->ops->event_unsubscribe(ti->tsp->ph,
