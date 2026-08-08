@@ -30,7 +30,7 @@
 	"\t[COMMANDS]\n" \
 	"\t info [full] - Display summarized (or full) configuration and information data\n" \
 	"\t uuids - UUIDs dump\n" \
-	"\t monitor - Monitor Generation counter\n" \
+	"\t monitor [detach] - Monitor Generation counter\n" \
 	"\t shmti [check][dump <sid>] - SHMTI operations\n" \
 	"\t\t check - Sanity check of all SHMTis\n" \
 	"\t\t dump [<sid>] - Binary dump of <sid> or all SHMTI areas\n" \
@@ -1273,6 +1273,11 @@ static int monitor(struct tlm_state *st, struct parsed_args *args)
 	fds[1].fd = evt.efd;
 	fds[1].events = POLLIN;
 
+	if (args->cnt) {
+		fprintf(stdout, "==>> Closing FD on TLM device\n");
+		close(st->fd);
+	}
+
 	fprintf(stdout, "==>> Waiting for events of type %u on cookie:%u\n",
 		evt.type, evt.cookie);
 	while (1) {
@@ -1301,12 +1306,14 @@ static int monitor(struct tlm_state *st, struct parsed_args *args)
 		}
 	}
 
-	fprintf(stdout, "==>> DE-Registering for events of type %u on cookie:%u\n",
-		evt.type, evt.cookie);
-	ret = ioctl(st->fd, SCMI_TLM_EVENT_SUBSCRIBE, &evt);
-	if (ret) {
-		perror(IOCTL_ERR_STR(SCMI_TLM_EVENT_SUBSCRIBE));
-		return -1;
+	if (!args->cnt) {
+		fprintf(stdout, "==>> DE-Registering for events of type %u on cookie:%u\n",
+			evt.type, evt.cookie);
+		ret = ioctl(st->fd, SCMI_TLM_EVENT_SUBSCRIBE, &evt);
+		if (ret) {
+			perror(IOCTL_ERR_STR(SCMI_TLM_EVENT_SUBSCRIBE));
+			return -1;
+		}
 	}
 
 	close(sfd);
