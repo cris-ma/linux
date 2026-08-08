@@ -2033,6 +2033,13 @@ scmi_telemetry_state_set_resp_process(struct telemetry_info *ti, void *obj,
 			struct telemetry_shmti *shmti;
 			u32 de_offs, de_end;
 
+			/*
+			 * By the spec a FastChannel DE MUST return an INVALID
+			 * SHMTI ID on enable.
+			 */
+			if (WARN_ON((de->fc_support)))
+				return -EPROTO;
+
 			de_offs = le32_to_cpu(resp->shmti_de_offset);
 
 			shmti = &ti->shmti[sid];
