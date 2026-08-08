@@ -79,6 +79,7 @@ struct scmi_tlm_setup {
  * @info: A reference to this instance SCMI Telemetry info data.
  * @events_xa: An XArray holding Telemetry events currently subscribed by this
  *	       instance of the driver.
+ * @events_mtx: A mutex to protect events_xa
  */
 struct scmi_tlm_instance {
 	unsigned int id;
@@ -90,6 +91,8 @@ struct scmi_tlm_instance {
 #define SCMI_TLM_EVT_XA_MIN	1
 #define scmi_evt_xa_limit	XA_LIMIT(SCMI_TLM_EVT_XA_MIN, UINT_MAX)
 	struct xarray events_xa;
+	/* Protect events_xa */
+	struct mutex events_mtx;
 };
 
 #define to_instance(c)	container_of(c, struct scmi_tlm_instance, cdev)
@@ -1181,6 +1184,7 @@ static int scmi_tlm_event_subscribe(struct scmi_tlm_instance *ti,
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
 
+	guard(mutex)(&ti->events_mtx);
 	ret = xa_alloc(&ti->events_xa, &cookie, ctx, scmi_evt_xa_limit,
 		       GFP_KERNEL);
 	if (ret) {
@@ -1208,6 +1212,7 @@ static void scmi_tlm_event_unsubscribe(struct scmi_tlm_instance *ti,
 	if (!evt->cookie)
 		return;
 
+	guard(mutex)(&ti->events_mtx);
 	ctx = xa_erase(&ti->events_xa, evt->cookie);
 	if (!ctx)
 		return;
@@ -1342,6 +1347,7 @@ static struct scmi_tlm_instance *scmi_tlm_init(struct scmi_tlm_setup *tsp,
 	ti->id = instance_id;
 	ti->tsp = tsp;
 	xa_init_flags(&ti->events_xa, XA_FLAGS_ALLOC);
+	mutex_init(&ti->events_mtx);
 
 	return ti;
 }
@@ -1426,6 +1432,7 @@ static void scmi_telemetry_remove(struct scmi_device *sdev)
 	 * its eventfd and then close the tlm_<N> and just monitoring the
 	 * events.
 	 * */
+	guard(mutex)(&ti->events_mtx);
 	xa_for_each(&ti->events_xa, cookie, ctx) {
 		xa_erase(&ti->events_xa, cookie);
 		ti->tsp->ops->event_unsubscribe(ti->tsp->ph,
