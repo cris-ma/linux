@@ -308,12 +308,23 @@ struct scmi_tlm_data_read {
 /**
  * struct scmi_tlm_batch  - A wrapper structure for BATCH operations
  *
+ * This structure is used as an opaque container for a set of objects of the
+ * same kind: it is used by a number of different IOCTLs and it is up to the
+ * specific IOCTL implementation to enforce a proper upper-bound on
+ * @num_items.
+ *
+ * The @states field is optional and when it is NULL it is up to the specific
+ * IOCTL implementation to decide which policy to enforce in case of failures
+ * in the middle of the batch processing: as of now each BATCHED IOCTLs fails
+ * as a whole as soon as one of the batched requests fails, without any kind
+ * of roll-back of the successful requests.
+ *
  * @num_items: Number of items in @items and @states - IN
  * @item_sz: Size of a single item contained in @items - IN
  * @reserved: Some room for future expansion. Must be zero.
- * @states: A reference to an arrays of u32 items representing the outcome of
- *	    the requests for each single item in @items: these are ordered in
- *	    the same order as the @items. - OUT
+ * @states: An optional  reference to an arrays of s32 items representing the
+ *	    outcome of the requests for each single item in @items: these are
+ *	    ordered in the same order as the @items. - OUT
  * @items: A reference to an array of batched requests - IN/OUT
  *
  * Used by:
@@ -493,7 +504,7 @@ struct scmi_tlm_event {
 
 #define SCMI_TLM_GET_ABI_INFO	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x00, struct scmi_tlm_abi_info)
 #define SCMI_TLM_GET_CFG	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x01, struct scmi_tlm_config)
-#define SCMI_TLM_SET_CFG	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x02, struct scmi_tlm_config)
+#define SCMI_TLM_SET_CFG	_IOW(SCMI_TLM_IOCTL_MAGIC, 0x02, struct scmi_tlm_config)
 #define SCMI_TLM_GET_INTRVS	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x03, struct scmi_tlm_intervals)
 #define SCMI_TLM_GET_DE_CFG	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x04, struct scmi_tlm_batch)
 #define SCMI_TLM_SET_DE_CFG	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x05, struct scmi_tlm_batch)
@@ -501,7 +512,7 @@ struct scmi_tlm_event {
 #define SCMI_TLM_GET_DE_LIST	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x07, struct scmi_tlm_des_list)
 #define SCMI_TLM_DE_READ	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x08, struct scmi_tlm_de_sample)
 #define SCMI_TLM_GET_ALL_CFG	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x09, struct scmi_tlm_de_config)
-#define SCMI_TLM_SET_ALL_CFG	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x0A, struct scmi_tlm_de_config)
+#define SCMI_TLM_SET_ALL_CFG	_IOW(SCMI_TLM_IOCTL_MAGIC, 0x0A, struct scmi_tlm_de_config)
 #define SCMI_TLM_GET_GRP_LIST	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x0B, struct scmi_tlm_grps_list)
 #define SCMI_TLM_GET_GRP_INFO	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x0C, struct scmi_tlm_grp_info)
 #define SCMI_TLM_GET_GRP_DESC	_IOWR(SCMI_TLM_IOCTL_MAGIC, 0x0D, struct scmi_tlm_grp_desc)
