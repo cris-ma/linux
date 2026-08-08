@@ -416,19 +416,17 @@ scmi_tlm_intervals_get_ioctl(const struct scmi_tlm_instance *ti,
 
 static int
 scmi_tlm_batch_initialize(void __user *uptr, struct scmi_tlm_batch *batch,
-			  size_t item_sz, void **out_items,
-			  size_t *out_batch_sz, int **out_states,
-			  size_t *out_states_sz)
+			  size_t item_sz, unsigned int max_items,
+			  void **out_items, size_t *out_batch_sz,
+			  int **out_states, size_t *out_states_sz)
 {
 	size_t batch_sz;
 
 	if (copy_from_user(batch, uptr, sizeof(*batch)))
 		return -EFAULT;
 
-	if (batch->reserved)
-		return -EINVAL;
-
-	if (batch->item_sz != item_sz)
+	if (batch->reserved || batch->item_sz != item_sz ||
+	    batch->num_items > max_items)
 		return -EINVAL;
 
 	batch_sz = array_size(batch->num_items, batch->item_sz);
@@ -555,13 +553,15 @@ scmi_tlm_de_config_set_ioctl(const struct scmi_tlm_instance *ti,
 {
 	struct scmi_tlm_de_config *tcfg __free(kfree) = NULL;
 	int ret, *states __free(kfree) = NULL;
+	const struct scmi_telemetry_res_info *rinfo;
 	void __user *uptr = (void __user *)arg;
 	struct scmi_tlm_batch batch = {};
 	size_t batch_sz, states_sz;
 
+	rinfo = scmi_telemetry_res_info_get(ti->tsp);
 	ret = scmi_tlm_batch_initialize(uptr, &batch, sizeof(*tcfg),
-					(void **)&tcfg, &batch_sz, &states,
-					&states_sz);
+					rinfo->num_des, (void **)&tcfg, &batch_sz,
+					&states, &states_sz);
 	if (ret)
 		return ret;
 
@@ -600,13 +600,15 @@ scmi_tlm_de_config_get_ioctl(const struct scmi_tlm_instance *ti,
 {
 	struct scmi_tlm_de_config *tcfg __free(kfree) = NULL;
 	int ret, *states __free(kfree) = NULL;
+	const struct scmi_telemetry_res_info *rinfo;
 	void __user *uptr = (void __user *)arg;
 	struct scmi_tlm_batch batch = {};
 	size_t batch_sz, states_sz;
 
+	rinfo = scmi_telemetry_res_info_get(ti->tsp);
 	ret = scmi_tlm_batch_initialize(uptr, &batch, sizeof(*tcfg),
-					(void **)&tcfg, &batch_sz, &states,
-					&states_sz);
+					rinfo->num_des, (void **)&tcfg,
+					&batch_sz, &states, &states_sz);
 	if (ret)
 		return ret;
 
@@ -905,13 +907,15 @@ static long scmi_tlm_des_batch_read_ioctl(const struct scmi_tlm_instance *ti,
 {
 	struct scmi_telemetry_de_sample *samples __free(kfree) = NULL;
 	int ret, *states __free(kfree) = NULL;
+	const struct scmi_telemetry_res_info *rinfo;
 	void __user *uptr = (void __user *)arg;
 	struct scmi_tlm_batch batch = {};
 	size_t batch_sz, states_sz;
 
+	rinfo = scmi_telemetry_res_info_get(ti->tsp);
 	ret = scmi_tlm_batch_initialize(uptr, &batch, sizeof(*samples),
-					(void **)&samples, &batch_sz, &states,
-					&states_sz);
+					rinfo->num_des, (void **)&samples,
+					&batch_sz, &states, &states_sz);
 	if (ret)
 		return ret;
 
