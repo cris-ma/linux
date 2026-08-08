@@ -384,8 +384,12 @@ scmi_tlm_intervals_get_ioctl(const struct scmi_tlm_instance *ti,
 	if (ivs.num_intervals < tlm_ivs->num_intervals)
 		return -ENOSPC;
 
+	ivs_intrv_sz = array_size(ivs.num_intervals,
+				  sizeof(struct scmi_tlm_update_interval));
+	if (ivs_intrv_sz == SIZE_MAX)
+		return -EOVERFLOW;
+
 	/* A local scratch buffer... */
-	ivs_intrv_sz = ivs.num_intervals * sizeof(struct scmi_tlm_update_interval);
 	struct scmi_tlm_update_interval *ivs_intrv __free(kfree) =
 		kzalloc(ivs_intrv_sz, GFP_KERNEL);
 	if (!ivs_intrv)
@@ -402,6 +406,81 @@ scmi_tlm_intervals_get_ioctl(const struct scmi_tlm_instance *ti,
 		return -EFAULT;
 
 	if (copy_to_user(uptr, &ivs, sizeof(ivs)))
+		return -EFAULT;
+
+	return 0;
+}
+
+static int
+scmi_tlm_batch_initialize(void __user *uptr, struct scmi_tlm_batch *batch,
+			  size_t item_sz, void **out_items,
+			  size_t *out_batch_sz, int **out_states,
+			  size_t *out_states_sz)
+{
+	size_t batch_sz;
+
+	if (copy_from_user(batch, uptr, sizeof(*batch)))
+		return -EFAULT;
+
+	if (batch->reserved)
+		return -EINVAL;
+
+	if (batch->item_sz != item_sz)
+		return -EINVAL;
+
+	batch_sz = array_size(batch->num_items, batch->item_sz);
+	if (batch_sz == SIZE_MAX)
+		return -EOVERFLOW;
+
+	void *items __free(kfree) = kzalloc(batch_sz, GFP_KERNEL);
+	if (!items)
+		return -ENOMEM;
+
+	/* Read all the requested configs */
+	if (copy_from_user(items, u64_to_user_ptr(batch->items), batch_sz))
+		return -EFAULT;
+
+	/* Is per-read status required ? */
+	if (batch->states) {
+		size_t states_sz;
+
+		states_sz = array_size(batch->num_items, sizeof(int));
+		if (states_sz == SIZE_MAX)
+			return -EOVERFLOW;
+
+		int *states_arr __free(kfree) = kzalloc(states_sz, GFP_KERNEL);
+		if (!states_arr)
+			return -ENOMEM;
+
+		if (copy_from_user(states_arr, u64_to_user_ptr(batch->states),
+				   states_sz))
+			return -EFAULT;
+
+		*out_states = no_free_ptr(states_arr);
+		*out_states_sz = states_sz;
+	}
+
+	*out_items = no_free_ptr(items);
+	*out_batch_sz = batch_sz;
+
+	return 0;
+}
+
+static int
+scmi_tlm_batch_finalize(void __user *uptr, struct scmi_tlm_batch *batch,
+			void *items, int *states, size_t batch_sz,
+			size_t states_sz)
+{
+	if (copy_to_user(u64_to_user_ptr(batch->items), items, batch_sz))
+		return -EFAULT;
+
+	if (batch->states) {
+		if (copy_to_user(u64_to_user_ptr(batch->states),
+				 states, states_sz))
+			return -EFAULT;
+	}
+
+	if (copy_to_user(uptr, batch, sizeof(*batch)))
 		return -EFAULT;
 
 	return 0;
@@ -471,43 +550,17 @@ static long
 scmi_tlm_de_config_set_ioctl(const struct scmi_tlm_instance *ti,
 			     unsigned long arg)
 {
+	struct scmi_tlm_de_config *tcfg __free(kfree) = NULL;
+	int ret, *states __free(kfree) = NULL;
 	void __user *uptr = (void __user *)arg;
-	struct scmi_tlm_batch batch;
-	int *states = NULL;
+	struct scmi_tlm_batch batch = {};
+	size_t batch_sz, states_sz;
 
-	if (copy_from_user(&batch, uptr, sizeof(batch)))
-		return -EFAULT;
-
-	if (batch.reserved)
-		return -EINVAL;
-
-	if (batch.item_sz != sizeof(struct scmi_tlm_de_config))
-		return -EINVAL;
-
-	struct scmi_tlm_de_config *tcfg __free(kfree) =
-		kcalloc(batch.num_items, sizeof(*tcfg), GFP_KERNEL);
-	if (!tcfg)
-		return -ENOMEM;
-
-	/* Read all the requested configs */
-	if (copy_from_user(tcfg, u64_to_user_ptr(batch.items),
-			   batch.num_items * batch.item_sz))
-		return -EFAULT;
-
-	/* Is per-read status required ? */
-	if (batch.states) {
-		int *states_arr __free(kfree) =
-			kcalloc(batch.num_items, sizeof(*states_arr),
-				GFP_KERNEL);
-		if (!states_arr)
-			return -ENOMEM;
-
-		if (copy_from_user(states_arr, u64_to_user_ptr(batch.states),
-				   batch.num_items * sizeof(*states_arr)))
-			return -EFAULT;
-
-		states = no_free_ptr(states_arr);
-	}
+	ret = scmi_tlm_batch_initialize(uptr, &batch, sizeof(*tcfg),
+					(void **)&tcfg, &batch_sz, &states,
+					&states_sz);
+	if (ret)
+		return ret;
 
 	for (int i = 0; i < batch.num_items; i++) {
 		unsigned int sid, offset;
@@ -534,65 +587,25 @@ scmi_tlm_de_config_set_ioctl(const struct scmi_tlm_instance *ti,
 		export_uuid(tcfg[i].uuid, &uuid);
 	}
 
-	if (copy_to_user(u64_to_user_ptr(batch.items), tcfg,
-			 batch.num_items * batch.item_sz))
-		return -EFAULT;
-
-	if (batch.states) {
-		if (copy_to_user(u64_to_user_ptr(batch.states), states,
-				 batch.num_items * sizeof(*states)))
-			return -EFAULT;
-
-		kfree(states);
-	}
-
-	if (copy_to_user(uptr, &batch, sizeof(batch)))
-		return -EFAULT;
-
-	return 0;
+	return scmi_tlm_batch_finalize(uptr, &batch, tcfg, states, batch_sz,
+				       states_sz);
 }
 
 static long
 scmi_tlm_de_config_get_ioctl(const struct scmi_tlm_instance *ti,
 			     unsigned long arg)
 {
+	struct scmi_tlm_de_config *tcfg __free(kfree) = NULL;
+	int ret, *states __free(kfree) = NULL;
 	void __user *uptr = (void __user *)arg;
-	struct scmi_tlm_batch batch;
-	int ret, *states = NULL;
+	struct scmi_tlm_batch batch = {};
+	size_t batch_sz, states_sz;
 
-	if (copy_from_user(&batch, uptr, sizeof(batch)))
-		return -EFAULT;
-
-	if (batch.reserved)
-		return -EINVAL;
-
-	if (batch.item_sz != sizeof(struct scmi_tlm_de_config))
-		return -EINVAL;
-
-	struct scmi_tlm_de_config *tcfg __free(kfree) =
-		kcalloc(batch.num_items, sizeof(*tcfg), GFP_KERNEL);
-	if (!tcfg)
-		return -ENOMEM;
-
-	/* Read all the requested configs */
-	if (copy_from_user(tcfg, u64_to_user_ptr(batch.items),
-			   batch.num_items * batch.item_sz))
-		return -EFAULT;
-
-	/* Is per-read status required ? */
-	if (batch.states) {
-		int *states_arr __free(kfree) =
-			kcalloc(batch.num_items, sizeof(*states_arr),
-				GFP_KERNEL);
-		if (!states_arr)
-			return -ENOMEM;
-
-		if (copy_from_user(states_arr, u64_to_user_ptr(batch.states),
-				   batch.num_items * sizeof(*states_arr)))
-			return -EFAULT;
-
-		states = no_free_ptr(states_arr);
-	}
+	ret = scmi_tlm_batch_initialize(uptr, &batch, sizeof(*tcfg),
+					(void **)&tcfg, &batch_sz, &states,
+					&states_sz);
+	if (ret)
+		return ret;
 
 	for (int i = 0; i < batch.num_items; i++) {
 		unsigned int sid, offset;
@@ -619,22 +632,8 @@ scmi_tlm_de_config_get_ioctl(const struct scmi_tlm_instance *ti,
 		export_uuid(tcfg[i].uuid, &uuid);
 	}
 
-	if (copy_to_user(u64_to_user_ptr(batch.items), tcfg,
-			 batch.num_items * batch.item_sz))
-		return -EFAULT;
-
-	if (batch.states) {
-		if (copy_to_user(u64_to_user_ptr(batch.states), states,
-				 batch.num_items * sizeof(*states)))
-			return -EFAULT;
-
-		kfree(states);
-	}
-
-	if (copy_to_user(uptr, &batch, sizeof(batch)))
-		return -EFAULT;
-
-	return 0;
+	return scmi_tlm_batch_finalize(uptr, &batch, tcfg, states, batch_sz,
+				       states_sz);
 }
 
 static long
@@ -682,8 +681,11 @@ scmi_tlm_des_list_get_ioctl(const struct scmi_tlm_instance *ti, unsigned long ar
 	if (dsl.num_des < rinfo->num_des)
 		return -ENOSPC;
 
+	dsl_des_sz = array_size(dsl.num_des, sizeof(struct scmi_tlm_de_info));
+	if (dsl_des_sz == SIZE_MAX)
+		return -EOVERFLOW;
+
 	/* A local scratch buffer... */
-	dsl_des_sz = dsl.num_des * sizeof(struct scmi_tlm_de_info);
 	struct scmi_tlm_de_info *dsl_des __free(kfree) =
 		kzalloc(dsl_des_sz, GFP_KERNEL);
 	if (!dsl_des)
@@ -776,8 +778,11 @@ scmi_tlm_grp_desc_get_ioctl(const struct scmi_tlm_instance *ti, unsigned long ar
 	if (gdesc.num_des < rinfo->grps_store[gdesc.grp_id].num_des)
 		return -ENOSPC;
 
+	composing_sz = array_size(gdesc.num_des, sizeof(u32));
+	if (composing_sz == SIZE_MAX)
+		return -EOVERFLOW;
+
 	/* A local scratch buffer... */
-	composing_sz = gdesc.num_des * sizeof(u32);
 	u32 *composing_des __free(kfree) = kzalloc(composing_sz, GFP_KERNEL);
 	if (!composing_des)
 		return -ENOMEM;
@@ -817,8 +822,11 @@ scmi_tlm_grps_list_get_ioctl(const struct scmi_tlm_instance *ti, unsigned long a
 	if (gsl.num_grps < rinfo->num_groups)
 		return -ENOSPC;
 
+	ginfo_sz = array_size(gsl.num_grps, sizeof(struct scmi_tlm_grp_info));
+	if (ginfo_sz == SIZE_MAX)
+		return -EOVERFLOW;
+
 	/* A local scratch buffer... */
-	ginfo_sz = gsl.num_grps * sizeof(struct scmi_tlm_grp_info);
 	struct scmi_tlm_grp_info *ginfo __free(kfree) =
 		kzalloc(ginfo_sz, GFP_KERNEL);
 	if (!ginfo)
@@ -892,49 +900,22 @@ static long scmi_tlm_des_read_ioctl(const struct scmi_tlm_instance *ti,
 static long scmi_tlm_des_batch_read_ioctl(const struct scmi_tlm_instance *ti,
 					  unsigned long arg)
 {
+	struct scmi_telemetry_de_sample *samples __free(kfree) = NULL;
+	int ret, *states __free(kfree) = NULL;
 	void __user *uptr = (void __user *)arg;
-	struct scmi_tlm_setup *tsp = ti->tsp;
-	struct scmi_tlm_batch batch;
-	int *states = NULL;
+	struct scmi_tlm_batch batch = {};
+	size_t batch_sz, states_sz;
 
-	if (copy_from_user(&batch, uptr, sizeof(batch)))
-		return -EFAULT;
-
-	if (batch.reserved)
-		return -EINVAL;
-
-	if (batch.item_sz != sizeof(struct scmi_tlm_de_sample))
-		return -EINVAL;
-
-	struct scmi_telemetry_de_sample *samples __free(kfree) =
-		kcalloc(batch.num_items, sizeof(*samples), GFP_KERNEL);
-	if (!samples)
-		return -ENOMEM;
-
-	/* Read all the requested samples */
-	if (copy_from_user(samples, u64_to_user_ptr(batch.items),
-			   batch.num_items * batch.item_sz))
-		return -EFAULT;
-
-	/* Is per-read status required ? */
-	if (batch.states) {
-		int *states_arr __free(kfree) =
-			kcalloc(batch.num_items, sizeof(*states_arr),
-				GFP_KERNEL);
-		if (!states_arr)
-			return -ENOMEM;
-
-		if (copy_from_user(states_arr, u64_to_user_ptr(batch.states),
-				   batch.num_items * sizeof(*states_arr)))
-			return -EFAULT;
-
-		states = no_free_ptr(states_arr);
-	}
+	ret = scmi_tlm_batch_initialize(uptr, &batch, sizeof(*samples),
+					(void **)&samples, &batch_sz, &states,
+					&states_sz);
+	if (ret)
+		return ret;
 
 	for (int i = 0; i < batch.num_items; i++) {
 		int ret;
 
-		ret = tsp->ops->de_data_read(tsp->ph, &samples[i]);
+		ret = ti->tsp->ops->de_data_read(ti->tsp->ph, &samples[i]);
 		if (ret) {
 			if (!states)
 				return ret;
@@ -944,22 +925,8 @@ static long scmi_tlm_des_batch_read_ioctl(const struct scmi_tlm_instance *ti,
 		}
 	}
 
-	if (copy_to_user(u64_to_user_ptr(batch.items), samples,
-			 batch.num_items * batch.item_sz))
-		return -EFAULT;
-
-	if (batch.states) {
-		if (copy_to_user(u64_to_user_ptr(batch.states), states,
-				 batch.num_items * sizeof(*states)))
-			return -EFAULT;
-
-		kfree(states);
-	}
-
-	if (copy_to_user(uptr, &batch, sizeof(batch)))
-		return -EFAULT;
-
-	return 0;
+	return scmi_tlm_batch_finalize(uptr, &batch, samples, states, batch_sz,
+				       states_sz);
 }
 
 static struct scmi_tlm_shmti_ctx *
@@ -1121,8 +1088,11 @@ scmi_tlm_shmtis_list_get_ioctl(const struct scmi_tlm_instance *ti,
 	if (ssl.num_shmtis < ti->info->base.num_shmtis)
 		return -ENOSPC;
 
+	shinfo_sz = array_size(ssl.num_shmtis, sizeof(struct scmi_tlm_shmti_info));
+	if (shinfo_sz == SIZE_MAX)
+		return -EOVERFLOW;
+
 	/* A local scratch buffer... */
-	shinfo_sz = ssl.num_shmtis * sizeof(struct scmi_tlm_shmti_info);
 	struct scmi_tlm_shmti_info *shinfo __free(kfree) =
 		kzalloc(shinfo_sz, GFP_KERNEL);
 	if (!shinfo)
@@ -1175,8 +1145,11 @@ scmi_tlm_uuid_list_get_ioctl(const struct scmi_tlm_instance *ti,
 	if (udl.num_uuids > ti->info->num_uuids)
 		return -ENOSPC;
 
+	uuids_sz = array_size(udl.num_uuids, sizeof(struct scmi_tlm_uuid));
+	if (uuids_sz == SIZE_MAX)
+		return -EOVERFLOW;
+
 	/* A local scratch buffer... */
-	uuids_sz = udl.num_uuids * sizeof(struct scmi_tlm_uuid);
 	struct scmi_tlm_uuid *uuids __free(kfree) = kzalloc(uuids_sz, GFP_KERNEL);
 	if (!uuids)
 		return -ENOMEM;
