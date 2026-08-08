@@ -434,12 +434,14 @@ struct telemetry_shmti {
 		oflow;								\
 	})
 
+struct telemetry_info;
+
 struct telemetry_line {
 	enum tdcf_line_types type;
 	u32 last_magic;
 	struct payload __iomem *payld;
 	refcount_t users;
-	struct xarray *xa_lines;
+	struct telemetry_info *ti;
 	/* Protect line accesses  */
 	struct mutex mtx;
 };
@@ -1361,10 +1363,10 @@ scmi_telemetry_resources_get(const struct scmi_protocol_handle *ph)
 static u64
 scmi_telemetry_blkts_read(u32 magic, struct telemetry_block_ts *bts)
 {
+	guard(mutex)(&bts->line.mtx);
+
 	if (WARN_ON(!bts || !refcount_read(&bts->line.users)))
 		return 0;
-
-	guard(mutex)(&bts->line.mtx);
 
 	if (bts->line.last_magic == magic)
 		return bts->last_ts;
@@ -1394,7 +1396,8 @@ static void scmi_telemetry_blkts_update(struct telemetry_info *ti, u32 magic,
 static void scmi_telemetry_line_put(struct telemetry_line *line, void *blob)
 {
 	if (refcount_dec_and_test(&line->users)) {
-		xa_erase(line->xa_lines, (unsigned long)line->payld);
+		guard(mutex)(&line->ti->lines_mtx);
+		xa_erase(&line->ti->xa_lines, (unsigned long)line->payld);
 		kfree(blob);
 	}
 }
@@ -1404,6 +1407,7 @@ static void scmi_telemetry_blkts_unlink(struct telemetry_de *tde)
 	if (!tde->bts)
 		return;
 
+	guard(mutex)(&tde->bts->line.mtx);
 	scmi_telemetry_line_put(&tde->bts->line, tde->bts);
 	tde->bts = NULL;
 	trace_scmi_tlm_access(tde->de.info->id, "BLKTS_UNLINK", 0, 0);
@@ -1414,6 +1418,7 @@ static void scmi_telemetry_uuid_unlink(struct telemetry_de *tde)
 	if (!tde->uuid)
 		return;
 
+	guard(mutex)(&tde->uuid->line.mtx);
 	scmi_telemetry_line_put(&tde->uuid->line, tde->uuid);
 	/* Ensure UUID is visible once nullified */
 	smp_store_release(&tde->uuid, NULL);
@@ -1430,13 +1435,15 @@ static void scmi_telemetry_de_unlink(struct scmi_telemetry_de *de)
 }
 
 static struct telemetry_line *
-scmi_telemetry_line_get(struct xarray *xa_lines, struct payload __iomem *payld)
+scmi_telemetry_line_get(struct telemetry_info *ti, struct payload __iomem *payld)
 {
 	struct telemetry_line *line;
 
-	line = xa_load(xa_lines, (unsigned long)payld);
-	if (!line)
-		return NULL;
+	scoped_guard(mutex, &ti->lines_mtx) {
+		line = xa_load(&ti->xa_lines, (unsigned long)payld);
+		if (!line)
+			return NULL;
+	}
 
 	refcount_inc(&line->users);
 
@@ -1444,17 +1451,17 @@ scmi_telemetry_line_get(struct xarray *xa_lines, struct payload __iomem *payld)
 }
 
 static int
-scmi_telemetry_line_init(struct telemetry_line *line, struct xarray *xa_lines,
-			 struct payload __iomem *payld,
-			 enum tdcf_line_types type)
+scmi_telemetry_line_init(struct telemetry_info *ti, struct telemetry_line *line,
+			 struct payload __iomem *payld, enum tdcf_line_types type)
 {
 	line->type = type;
 	refcount_set(&line->users, 1);
 	line->payld = payld;
-	line->xa_lines = xa_lines;
+	line->ti = ti;
 	mutex_init(&line->mtx);
 
-	return xa_insert(xa_lines, (unsigned long)payld, line, GFP_KERNEL);
+	guard(mutex)(&ti->lines_mtx);
+	return xa_insert(&ti->xa_lines, (unsigned long)payld, line, GFP_KERNEL);
 }
 
 static struct telemetry_block_ts *
@@ -1468,8 +1475,7 @@ scmi_telemetry_blkts_create(struct telemetry_info *ti,
 	if (!bts)
 		return NULL;
 
-	ret = scmi_telemetry_line_init(&bts->line, &ti->xa_lines, payld,
-				       TDCF_BLK_TS_LINE);
+	ret = scmi_telemetry_line_init(ti, &bts->line, payld, TDCF_BLK_TS_LINE);
 	if (ret) {
 		kfree(bts);
 		return NULL;
@@ -1486,8 +1492,7 @@ scmi_telemetry_blkts_get_or_create(struct telemetry_info *ti,
 {
 	struct telemetry_line *line;
 
-	guard(mutex)(&ti->lines_mtx);
-	line = scmi_telemetry_line_get(&ti->xa_lines, payld);
+	line = scmi_telemetry_line_get(ti, payld);
 	if (line)
 		return to_blkts(line);
 
@@ -1517,7 +1522,7 @@ static int scmi_telemetry_uuids_update(struct telemetry_info *ti,
 	}
 
 	/* Bump refcount on this line ... cannot fail by construction */
-	scmi_telemetry_line_get(&ti->xa_lines, uuid->line.payld);
+	scmi_telemetry_line_get(ti, uuid->line.payld);
 
 	ti->info.uuids[ti->info.num_uuids] = &uuid->uuid;
 	ti->info.num_uuids++;
@@ -1554,8 +1559,7 @@ scmi_telemetry_uuid_create(struct telemetry_info *ti,
 		import_uuid(&uuid->uuid, (__force const __u8 *)&dwords[0]);
 	}
 
-	ret = scmi_telemetry_line_init(&uuid->line, &ti->xa_lines, payld,
-				       TDCF_UUID_LINE);
+	ret = scmi_telemetry_line_init(ti, &uuid->line, payld, TDCF_UUID_LINE);
 	if (ret) {
 		kfree(uuid);
 		return NULL;
@@ -1579,8 +1583,7 @@ scmi_telemetry_uuid_get_or_create(struct telemetry_info *ti,
 {
 	struct telemetry_line *line;
 
-	guard(mutex)(&ti->lines_mtx);
-	line = scmi_telemetry_line_get(&ti->xa_lines, payld);
+	line = scmi_telemetry_line_get(ti, payld);
 	if (line)
 		return to_uuid_from_line(line);
 
