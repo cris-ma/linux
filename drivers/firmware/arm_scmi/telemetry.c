@@ -2151,7 +2151,6 @@ static int scmi_telemetry_primary_uuid_init(struct telemetry_info *ti)
 {
 	struct telemetry_uuid *uuid;
 
-	guard(mutex)(&ti->lines_mtx);
 	/* Primary UUID is stored on key 0 (NULL) */
 	uuid = scmi_telemetry_uuid_create(ti, NULL);
 	if (!uuid)
