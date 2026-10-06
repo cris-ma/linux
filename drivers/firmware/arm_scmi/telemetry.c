@@ -2501,9 +2501,9 @@ static int scmi_telemetry_instance_init(struct telemetry_info *ti)
 	/* Initialize the first UUIDs in the global list with the primary */
 	ret = scmi_telemetry_primary_uuid_init(ti);
 	if (ret) {
+		scmi_telemetry_uuids_cleanup(ti);
 		xa_destroy(&ti->xa_lines);
 		xa_destroy(&ti->xa_des);
-		scmi_telemetry_uuids_cleanup(ti);
 		scmi_telemetry_resources_free(ti);
 		return ret;
 	}
