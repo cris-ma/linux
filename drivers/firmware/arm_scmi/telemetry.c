@@ -2289,7 +2289,7 @@ scmi_telemetry_tde_allocate(struct telemetry_info *ti, u32 de_id,
 	return tde;
 }
 
-static inline void
+static inline int
 scmi_telemetry_line_data_parse(struct telemetry_de *tde,
 			       struct scmi_telemetry_de_sample *sample,
 			       struct payload __iomem *payld, u32 magic)
@@ -2314,7 +2314,7 @@ scmi_telemetry_line_data_parse(struct telemetry_de *tde,
 		if (!HAS_LINE_EXT_RAW(meta)) {
 			trace_scmi_tlm_access(tde->de.info->id,
 					      "SHMTI_BAD_TS_LINE", 0, 0);
-			return;
+			return -EPROTO;
 		}
 
 		sample->tstamp = LINE_TSTAMP_GET(&payld->tsl);
@@ -2328,6 +2328,8 @@ scmi_telemetry_line_data_parse(struct telemetry_de *tde,
 			       sample->val, "SHMTI_DE_READ");
 
 	scmi_telemetry_tde_cache_update(tde, sample, &magic);
+
+	return 0;
 }
 
 static inline void scmi_telemetry_blkts_link(struct telemetry_de *tde,
@@ -2494,7 +2496,10 @@ static void scmi_telemetry_tdcf_data_parse(struct telemetry_info *ti,
 	/* Link the active UUID or the primary, it's unlinked on disable */
 	scmi_telemetry_uuid_link(tde, active_uuid ?: ti->primary_uuid);
 
-	/* Parse data words ... only for the sake of updating TDE cache */
+	/*
+	 * Parse data words ... only for the sake of updating TDE cache,
+	 * any error is logged by ignored.
+	 */
 	scmi_telemetry_line_data_parse(tde, &sample, payld, shmti->last_magic);
 }
 
@@ -3497,7 +3502,8 @@ scmi_telemetry_tdcf_de_parse(struct telemetry_de *tde,
 		payld = scmi_telemetry_tdcf_de_payld_get(tde);
 		err = PTR_ERR_OR_ZERO(payld);
 		if (!err)
-			scmi_telemetry_line_data_parse(tde, sample, payld, startm);
+			err = scmi_telemetry_line_data_parse(tde, sample,
+							     payld, startm);
 		else if (err == -EINVAL)
 			return err;
 
