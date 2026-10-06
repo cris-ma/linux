@@ -1839,15 +1839,15 @@ static inline void scmi_telemetry_blkts_link(struct telemetry_de *tde,
 	/* Acquiring order is: tde -> line */
 	lockdep_assert_held(&tde->mtx);
 
+	/* Unlink old stale BTS if existent */
+	scmi_telemetry_blkts_unlink(tde);
+
 	guard(mutex)(&bts->line.mtx);
 	refcount_inc(&bts->line.users);
 
 	/* Update TS clock rate if provided by the BLK_TS */
 	if (bts->last_rate)
 		tde->de.info->ts_rate = bts->last_rate;
-
-	/* Unlink old stale BTS if existent */
-	scmi_telemetry_blkts_unlink(tde);
 
 	tde->bts = bts;
 	trace_scmi_tlm_access(tde->de.info->id, "BLKTS_LINK", 0, 0);
