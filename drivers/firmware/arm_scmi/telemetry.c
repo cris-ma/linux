@@ -2872,11 +2872,12 @@ scmi_telemetry_collection_configure(const struct scmi_protocol_handle *ph,
 	msg->sampling_rate = interval;
 	ret = ph->xops->do_xfer(ph, t);
 	if (!ret) {
-		*current_state = tlm_enable;
 		*current_mode = next_mode;
-		if (!is_group)
+		if (!is_group) {
+			*current_state = tlm_enable;
 			ti->info.notif_enabled =
 				*current_mode == SCMI_TLM_NOTIFICATION;
+		}
 		if (update_interval_ms)
 			*active_update_interval = le32_to_cpu(interval);
 	}
