@@ -1810,11 +1810,16 @@ scmi_telemetry_blkts_bind(struct telemetry_info *ti, struct telemetry_shmti *shm
 								TDCF_BLK_TS_LINE);
 		if (!bts_payld)
 			return NULL;
+	} else if (!IS_BLK_TS_LINE(bts_payld)) {
+		trace_scmi_tlm_access(0, "BAD_BLK_TS_LINE_OFFSET", 0,
+				      PAYLD_META(bts_payld));
+		return NULL;
 	}
 
 	/* Check for spec compliance */
 	if (BLK_TS_INVALID(bts_payld)) {
-		trace_scmi_tlm_access(0, "BLK_TS_INVALID", 0, PAYLD_META(bts_payld));
+		trace_scmi_tlm_access(0, "BLK_TS_INVALID", 0,
+				      PAYLD_META(bts_payld));
 		return NULL;
 	}
 
@@ -2326,6 +2331,7 @@ scmi_telemetry_tde_linked_lines_process(struct telemetry_info *ti,
 					u32 bts_offs)
 {
 	struct payload __iomem *bts_payld;
+	struct telemetry_block_ts *bts;
 	struct telemetry_uuid *uuid;
 
 	/* Acquiring order is: tde -> line */
@@ -2351,6 +2357,11 @@ scmi_telemetry_tde_linked_lines_process(struct telemetry_info *ti,
 	if (!USE_BLK_TS(payld))
 		return 0;
 
+	if (tde->ts_type != TSTAMP_BLK) {
+		trace_scmi_tlm_access(tde->de.info->id, "BAD_DE_TSTAMP_TYPE", 0, 0);
+		return -EPROTO;
+	}
+
 	bts_payld = NULL;
 	if (bts_offs &&
 	    check_add_overflow((__force unsigned long)tde->base, bts_offs,
@@ -2369,21 +2380,25 @@ scmi_telemetry_tde_linked_lines_process(struct telemetry_info *ti,
 		trace_scmi_tlm_access(0, "BLKTS_WITH_ZERO_OFFSET", 0, 0);
 	}
 
+	/* Has associated BLK_TS line changed at all ? */
 	if (!BLK_TS_CHANGED(tde, bts_payld))
 		return 0;
 
-	/* Unlink old stale BTS if existent */
-	scmi_telemetry_blkts_unlink(tde);
 	/* Look for a viable BLK_TS line */
-	tde->bts = scmi_telemetry_blkts_bind(ti, shmti,
-					     payld, bts_payld);
-	if (WARN_ON(!tde->bts)) {
+	bts = scmi_telemetry_blkts_bind(ti, shmti, payld, bts_payld);
+	if (WARN_ON(!bts)) {
 		trace_scmi_tlm_access(tde->de.info->id, "INVALID_USE_BLK_TS", 0, 0);
 		return -EPROTO;
 	}
 
+	/* Unlink old stale BTS if existent */
+	scmi_telemetry_blkts_unlink(tde);
+
+	/* Store freshly discovered sane BLK_TS */
+	tde->bts = bts;
+
 	/* Update per-DE BLK_TS if any */
-	if (tde->ts_type == TSTAMP_BLK && tde->bts->last_rate)
+	if (tde->bts->last_rate)
 		tde->de.info->ts_rate = tde->bts->last_rate;
 
 	return 0;
