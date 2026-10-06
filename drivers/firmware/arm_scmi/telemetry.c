@@ -2584,7 +2584,7 @@ scmi_telemetry_remote_state_update_needed(struct telemetry_info *ti,
 	/*
 	 * When the object is currently disabled AND no enable state change was
 	 * requested, BUT timestamp is being changed, update only local state...
-	 * no need to send a messagenoew, it will be sent later on enable.
+	 * no need to send a message now, it will be sent later on enable.
 	 */
 	if (!enable && !*enabled_state) {
 		scmi_telemetry_state_cache_update(ti, enable,
@@ -2628,14 +2628,15 @@ static inline void
 scmi_telemetry_tde_location_update(struct telemetry_de *tde,
 				   u32 *sid, u32 *offset, uuid_t *uuid)
 {
-	lockdep_assert_held(&tde->mtx);
+	if (tde)
+		lockdep_assert_held(&tde->mtx);
 
 	if (sid)
-		*sid = tde->sid;
+		*sid = tde ? tde->sid : 0;
 	if (offset)
-		*offset = tde->offset;
+		*offset = tde ? tde->offset : 0;
 	if (uuid) {
-		if (tde->uuid)
+		if (tde && tde->uuid)
 			uuid_copy(uuid, &tde->uuid->uuid);
 		else
 			memset(uuid, 0x0, sizeof(*uuid));
@@ -2658,6 +2659,8 @@ static int scmi_telemetry_tde_state_set(const struct scmi_protocol_handle *ph,
 	guard(mutex)(&ti->config_mtx);
 
 	scoped_guard(mutex, &tde->mtx) {
+		/* Initialize return values in case of error */
+		scmi_telemetry_tde_location_update(NULL, sid, offset, uuid);
 		if (!scmi_telemetry_remote_state_update_needed(ti, enable, &de->enabled,
 							       tstamp, &de->tstamp_enabled,
 							       false, de))
