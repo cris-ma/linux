@@ -769,7 +769,10 @@ static int iter_de_descr_process_response(const struct scmi_protocol_handle *ph,
 	ret = scmi_telemetry_de_descriptor_parse(ti, tde, &p->next, &p->rx_len);
 	if (ret) {
 		dev_err(ph->dev, "Malformed DE Descriptor - ret:%d\n", ret);
-		goto err;
+		/* DE not enumerated at this point were created in this call */
+		if (discovered)
+			scmi_telemetry_free_tde_put(ti, tde);
+		return ret;
 	}
 
 	/* Now fully enumerated */
@@ -778,8 +781,11 @@ static int iter_de_descr_process_response(const struct scmi_protocol_handle *ph,
 	if (discovered) {
 		/* Register if it was not already ... */
 		ret = scmi_telemetry_tde_register(ti, tde);
-		if (ret)
-			goto err;
+		if (ret) {
+			/* DE not enumerated at this point were created in this call */
+			scmi_telemetry_free_tde_put(ti, tde);
+			return ret;
+		}
 	}
 
 	/* Add to FastChannels list */
@@ -791,13 +797,6 @@ static int iter_de_descr_process_response(const struct scmi_protocol_handle *ph,
 		tde->de.grp->info->num_des++;
 
 	return 0;
-
-err:
-	/* DE not enumerated at this point were created in this call */
-	if (discovered)
-		scmi_telemetry_free_tde_put(ti, tde);
-
-	return ret;
 }
 
 static int
