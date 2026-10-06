@@ -837,7 +837,7 @@ scmi_telemetry_de_groups_init(struct device *dev, struct telemetry_info *ti)
 
 	/* Unroll on failure... */
 	if (num_groups < ti->info.base.num_groups) {
-		for (int i = num_groups - 1; i > 0; i--) {
+		for (int i = num_groups - 1; i >= 0; i--) {
 			kfree(rinfo->grps[i].des);
 			rinfo->grps[i].des = NULL;
 			kfree(rinfo->grps[i].des_str);
