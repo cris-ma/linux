@@ -2348,7 +2348,7 @@ scmi_telemetry_tde_linked_lines_process(struct telemetry_info *ti,
 	}
 
 	/* Process related BLK_TS lines if any */
-	if (!USE_BLK_TS(payld) || !BLK_TS_CHANGED(tde, payld))
+	if (!USE_BLK_TS(payld))
 		return 0;
 
 	bts_payld = NULL;
@@ -2369,6 +2369,9 @@ scmi_telemetry_tde_linked_lines_process(struct telemetry_info *ti,
 		trace_scmi_tlm_access(0, "BLKTS_WITH_ZERO_OFFSET", 0, 0);
 	}
 
+	if (!BLK_TS_CHANGED(tde, bts_payld))
+		return 0;
+
 	/* Unlink old stale BTS if existent */
 	scmi_telemetry_blkts_unlink(tde);
 	/* Look for a viable BLK_TS line */
@@ -2380,8 +2383,7 @@ scmi_telemetry_tde_linked_lines_process(struct telemetry_info *ti,
 	}
 
 	/* Update per-DE BLK_TS if any */
-	if (tde->ts_type == TSTAMP_BLK &&
-	    tde->bts->last_rate)
+	if (tde->ts_type == TSTAMP_BLK && tde->bts->last_rate)
 		tde->de.info->ts_rate = tde->bts->last_rate;
 
 	return 0;
