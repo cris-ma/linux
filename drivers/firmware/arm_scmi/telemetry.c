@@ -2291,6 +2291,7 @@ static void scmi_telemetry_group_state_update(struct telemetry_info *ti,
 	for (int i = 0; i < grp->info->num_des; i++) {
 		struct scmi_telemetry_de *de = rinfo->des[grp->des[i]];
 
+		guard(mutex)(&(to_tde(de)->mtx));
 		if (enable)
 			scmi_telemetry_de_state_update(ti, ENA_STATE,
 						       &de->enabled, *enable);
