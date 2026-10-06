@@ -3085,17 +3085,19 @@ static int scmi_telemetry_tde_state_set(const struct scmi_protocol_handle *ph,
 	ret = ph->xops->do_xfer(ph, t);
 	if (!ret) {
 		guard(mutex)(&tde->mtx);
+		/* Update cached state on success */
+		scmi_telemetry_state_cache_update(ti, enable, &de->enabled,
+						  tstamp, &de->tstamp_enabled, NULL, de);
+		/* Process response, update DEs location tracking */
 		ret = scmi_telemetry_tde_state_set_resp_process(ti, de, resp);
-		if (!ret) {
+		if (!ret)
 			scmi_telemetry_tde_location_update(tde, sid, offset, uuid);
+		else
+			dev_err(ph->dev,
+				"Could NOT process DE ID 0x%08X state response - ret:%d\n",
+				tde->de.info->id, ret);
 
-			/* Update cached state on success */
-			scmi_telemetry_state_cache_update(ti, enable, &de->enabled,
-							  tstamp, &de->tstamp_enabled,
-							  NULL, de);
-
-			scmi_telemetry_generation_update(ti);
-		}
+		scmi_telemetry_generation_update(ti);
 	}
 
 	ph->xops->xfer_put(ph, t);
@@ -3133,15 +3135,16 @@ static int scmi_telemetry_group_state_set(const struct scmi_protocol_handle *ph,
 	resp = t->rx.buf;
 	ret = ph->xops->do_xfer(ph, t);
 	if (!ret) {
+		/* Update cached state on success */
+		scmi_telemetry_state_cache_update(ti, enable, &grp->enabled,
+						  tstamp, &grp->tstamp_enabled,
+						  grp, NULL);
 		ret = scmi_telemetry_group_state_set_resp_process(ti, grp, resp);
-		if (!ret) {
-			/* Update cached state on success */
-			scmi_telemetry_state_cache_update(ti, enable, &grp->enabled,
-							  tstamp, &grp->tstamp_enabled,
-							  grp, NULL);
-
-			scmi_telemetry_generation_update(ti);
-		}
+		if (ret)
+			dev_err(ph->dev,
+				"Could NOT process GROUP %u state response - ret:%d\n",
+				grp->info->grp_id, ret);
+		scmi_telemetry_generation_update(ti);
 	}
 
 	ph->xops->xfer_put(ph, t);
